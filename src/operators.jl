@@ -155,8 +155,8 @@ function (d::Div{P,S})(
     refGradFrac = 1.0 - valueFraction
     flux = bFaceFlux * refGradFrac * d.scale * -1.0
 	valueRHSx -= bFaceFlux * valueFraction * refValuex + refGradFrac * refGradientx / bdeltaCoeff
-	valueRHSx -= bFaceFlux * valueFraction * refValuey + refGradFrac * refGradienty / bdeltaCoeff
-	valueRHSx -= bFaceFlux * valueFraction * refValuez + refGradFrac * refGradientz / bdeltaCoeff
+	valueRHSy -= bFaceFlux * valueFraction * refValuey + refGradFrac * refGradienty / bdeltaCoeff
+	valueRHSz -= bFaceFlux * valueFraction * refValuez + refGradFrac * refGradientz / bdeltaCoeff
     return valueDiag - flux, valueRHSx* d.scale, valueRHSy* d.scale, valueRHSz * d.scale
 end
 
