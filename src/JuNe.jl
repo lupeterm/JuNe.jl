@@ -358,7 +358,7 @@ function cellBased_threaded(
             vals[fIdx] += offDiagValue 
             vals[fIdx+1] += offDiagValue 
             vals[fIdx+2] += offDiagValue 
-            diagValue -= dVal
+            diagValue += dVal
         end
         idx2D = celli * 3 -2
         dv, rx, ry, rz = temporals(
