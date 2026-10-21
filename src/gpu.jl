@@ -210,6 +210,18 @@ end
         Atomix.@atomic vals[idx]   -= valueLower
         Atomix.@atomic vals[idx+1] -= valueLower
         Atomix.@atomic vals[idx+2] -= valueLower
+        bs = boundedScale(fused_pde)
+        if bs != 0.0
+            ϕs = faceFlux[iFace] * bs
+            idx = (rowOwnStart + diagOffs[iOwner]) * 3 + 1
+            Atomix.@atomic vals[idx] -= ϕs
+            Atomix.@atomic vals[idx+1] -= ϕs
+            Atomix.@atomic vals[idx+2] -= ϕs
+            idx = (rowNeiStart + diagOffs[iNeighbor]) * 3 + 1
+            Atomix.@atomic vals[idx] += ϕs
+            Atomix.@atomic vals[idx+1] += ϕs
+            Atomix.@atomic vals[idx+2] += ϕs
+        end
 	else
 		bcfacei = iFace - numInteriorFaces
         start = bcfacei * 3 - 2
@@ -649,4 +661,16 @@ end
 	Atomix.@atomic vals[idx]   -= valueLower
 	Atomix.@atomic vals[idx+1] -= valueLower
 	Atomix.@atomic vals[idx+2] -= valueLower
+	bs = boundedScale(fused_pde)
+	if bs != 0.0
+	    ϕs = faceFlux[iFace] * bs
+	    idx = (rowOwnStart + diagOffs[iOwner]) * 3 + 1
+	    Atomix.@atomic vals[idx] -= ϕs
+	    Atomix.@atomic vals[idx+1] -= ϕs
+	    Atomix.@atomic vals[idx+2] -= ϕs
+	    idx = (rowNeiStart + diagOffs[iNeighbor]) * 3 + 1
+	    Atomix.@atomic vals[idx] += ϕs
+	    Atomix.@atomic vals[idx+1] += ϕs
+	    Atomix.@atomic vals[idx+2] += ϕs
+	end
 end

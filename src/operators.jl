@@ -70,13 +70,16 @@ end
 #### Convection
 # ∇(ϕ,U) (in momentum equation)
 
-struct Div{P,S}
+# B: bounded convection, which subtracts the net face outflow from the diagonal
+struct Div{P,S,B}
     scheme::S
     scale::P
 end
+Div{P,S}(scheme::S, scale::P) where {P,S} = Div{P,S,false}(scheme, scale)
+Div{P,S}(scheme::S, scale::P, bounded::Bool) where {P,S} = Div{P,S,bounded}(scheme, scale)
 
 # cellbased inner
-function (d::Div{P,S})(
+function (d::Div{P,S,B})(
     faceFlux::P,
     _::P,
     _::P,
@@ -84,7 +87,7 @@ function (d::Div{P,S})(
     valueUpper::P,
     valueLower::P,
     sign::P
-) where {P<:AbstractFloat,S}
+) where {P<:AbstractFloat,S,B}
     weights_f = d.scheme(faceFlux)
     if sign > 0
         offdiag = faceFlux * (1.0 - weights_f) * d.scale
@@ -93,6 +96,7 @@ function (d::Div{P,S})(
         offdiag = -faceFlux * weights_f * d.scale
         diagContrib = -faceFlux * (1.0 - weights_f) * d.scale
     end
+    B && (diagContrib -= sign * faceFlux * d.scale)
     return valueUpper + diagContrib, valueLower + offdiag
 end
 
@@ -113,7 +117,7 @@ end
 
 
 # facebased boundary 
-function (d::Div{P,S})(
+function (d::Div{P,S,B})(
     refValue::AbstractVector{P},
     refGradient::AbstractVector{P},
     bFaceFlux::P,
@@ -125,17 +129,18 @@ function (d::Div{P,S})(
     valueRHSx::P,
     valueRHSy::P,
     valueRHSz::P
-) where {P<:AbstractFloat,S}
+) where {P<:AbstractFloat,S,B}
     refGradFrac = 1.0 - valueFraction
     flux = bFaceFlux * refGradFrac * d.scale * -1.0
 	valueRHSx -= bFaceFlux * valueFraction * refValue[1] + refGradFrac * refGradient[1] / bdeltaCoeff
 	valueRHSy -= bFaceFlux * valueFraction * refValue[2] + refGradFrac * refGradient[2] / bdeltaCoeff
 	valueRHSz -= bFaceFlux * valueFraction * refValue[3] + refGradFrac * refGradient[3] / bdeltaCoeff
+    B && (valueDiag -= bFaceFlux * d.scale)
     return valueDiag - flux, valueRHSx, valueRHSy, valueRHSz 
 end
 
 # facebased boundary 
-function (d::Div{P,S})(
+function (d::Div{P,S,B})(
     refValuex::P,
     refValuey::P,
     refValuez::P,
@@ -151,12 +156,13 @@ function (d::Div{P,S})(
     valueRHSx::P,
     valueRHSy::P,
     valueRHSz::P
-) where {P<:AbstractFloat,S}
+) where {P<:AbstractFloat,S,B}
     refGradFrac = 1.0 - valueFraction
     flux = bFaceFlux * refGradFrac * d.scale * -1.0
 	valueRHSx -= bFaceFlux * valueFraction * refValuex + refGradFrac * refGradientx / bdeltaCoeff
 	valueRHSy -= bFaceFlux * valueFraction * refValuey + refGradFrac * refGradienty / bdeltaCoeff
 	valueRHSz -= bFaceFlux * valueFraction * refValuez + refGradFrac * refGradientz / bdeltaCoeff
+    B && (valueDiag -= bFaceFlux * d.scale)
     return valueDiag - flux, valueRHSx* d.scale, valueRHSy* d.scale, valueRHSz * d.scale
 end
 
@@ -320,6 +326,11 @@ hasTransient(t::Union{Div,Laplace}) = false
 splitTempSpat(t::DiffEq) = splitTempSpat(t.a) + splitTempSpat(t.b)
 splitTempSpat(t::Ddt) = t, nothing
 splitTempSpat(t::Union{Div,Laplace}) = nothing, t
+
+# scale of the bounded-convection diagonal term, 0 if no Div is bounded
+boundedScale(t::DiffEq) = boundedScale(t.a) + boundedScale(t.b)
+boundedScale(d::Div{P,S,true}) where {P,S} = d.scale
+boundedScale(_) = 0.0
 
 # Base.show(io::IO, t::DiffEq) = print(io, print(t.a), print(t.b)) 
 # Base.show(io::IO, t::Div) = print(io, "$(t.scale) * Div{P, $(t.scheme)}" ) 

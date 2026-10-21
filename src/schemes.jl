@@ -5,6 +5,8 @@ struct Noop{P} <: DivScheme{P} end
 
 struct upwind{P} <: DivScheme{P} end
 @inline (s::upwind{P})(ϕ) where {P<:AbstractFloat} = ifelse(ϕ ≥ 0, one(P), zero(P))
+# the implicit part of linearUpwind is upwind; its gradient correction only affects the RHS
+const linearUpwind = upwind
 
 struct linear{P} <: DivScheme{P} end
 @inline (u::linear{P})(ϕf) where {P<:AbstractFloat} = P(0.5)

@@ -840,6 +840,7 @@ function faceBasedAll_(
     bRhs::Vector{Float64}
 )
     numCells = length(rowOffs) - 1
+    bs = boundedScale(fused_pde)
     for iFace in 1:numInteriorFaces
         iOwner = owner[iFace] + 1
         iNeighbor = neighbour[iFace] + 1
@@ -866,6 +867,13 @@ function faceBasedAll_(
 
         idx = (rowNeiStart + diagOffs[iNeighbor]) * 3 + 1
         vals[idx:idx+2] .-= valueLower
+        if bs != 0.0
+            ϕs = faceFlux[iFace] * bs
+            idx = (rowOwnStart + diagOffs[iOwner]) * 3 + 1
+            vals[idx:idx+2] .-= ϕs
+            idx = (rowNeiStart + diagOffs[iNeighbor]) * 3 + 1
+            vals[idx:idx+2] .+= ϕs
+        end
     end
     for facei in numInteriorFaces+1:numInteriorFaces+length(bfaceFlux)
         bcfacei = facei - numInteriorFaces
@@ -922,6 +930,7 @@ function faceBasedAll_threaded(
     bRhs::Vector{Float64}
 )
     numCells = length(rowOffs) - 1
+    bs = boundedScale(fused_pde)
     @batch for iFace in 1:numInteriorFaces
         iOwner = owner[iFace] + 1
         iNeighbor = neighbour[iFace] + 1
@@ -949,6 +958,17 @@ function faceBasedAll_threaded(
         Atomix.@atomic vals[idx] -= valueLower
         Atomix.@atomic vals[idx+1] -= valueLower
         Atomix.@atomic vals[idx+2] -= valueLower
+        if bs != 0.0
+            ϕs = faceFlux[iFace] * bs
+            idx = (rowOwnStart + diagOffs[iOwner]) * 3 + 1
+            Atomix.@atomic vals[idx] -= ϕs
+            Atomix.@atomic vals[idx+1] -= ϕs
+            Atomix.@atomic vals[idx+2] -= ϕs
+            idx = (rowNeiStart + diagOffs[iNeighbor]) * 3 + 1
+            Atomix.@atomic vals[idx] += ϕs
+            Atomix.@atomic vals[idx+1] += ϕs
+            Atomix.@atomic vals[idx+2] += ϕs
+        end
     end
     @batch for facei in numInteriorFaces+1:numInteriorFaces+length(bfaceFlux)
         bcfacei = facei - numInteriorFaces
@@ -1010,6 +1030,7 @@ function globalfaceBasedAll_(
 )
     numCells = length(rowOffs) - 1
     numTotalFaces = numInteriorFaces + length(bfaceFlux)
+    bs = boundedScale(fused_pde)
     for iFace in 1:numTotalFaces
         if iFace <= numInteriorFaces
             iOwner = owner[iFace] + 1
@@ -1037,6 +1058,13 @@ function globalfaceBasedAll_(
 
             idx = (rowNeiStart + diagOffs[iNeighbor]) * 3 + 1
             vals[idx:idx+2] .-= valueLower
+            if bs != 0.0
+                ϕs = faceFlux[iFace] * bs
+                idx = (rowOwnStart + diagOffs[iOwner]) * 3 + 1
+                vals[idx:idx+2] .-= ϕs
+                idx = (rowNeiStart + diagOffs[iNeighbor]) * 3 + 1
+                vals[idx:idx+2] .+= ϕs
+            end
         else
             bcfacei = iFace - numInteriorFaces
             start = bcfacei * 3 - 2
@@ -1094,6 +1122,7 @@ function globalfaceBased_threaded(
 )
     numCells = length(rowOffs) - 1
     numTotalFaces = numInteriorFaces + length(bfaceFlux)
+    bs = boundedScale(fused_pde)
     @batch for iFace in 1:numTotalFaces
         if iFace <= numInteriorFaces
         iOwner = owner[iFace] + 1
@@ -1122,6 +1151,17 @@ function globalfaceBased_threaded(
         Atomix.@atomic vals[idx] -= valueLower
         Atomix.@atomic vals[idx+1] -= valueLower
         Atomix.@atomic vals[idx+2] -= valueLower
+        if bs != 0.0
+            ϕs = faceFlux[iFace] * bs
+            idx = (rowOwnStart + diagOffs[iOwner]) * 3 + 1
+            Atomix.@atomic vals[idx] -= ϕs
+            Atomix.@atomic vals[idx+1] -= ϕs
+            Atomix.@atomic vals[idx+2] -= ϕs
+            idx = (rowNeiStart + diagOffs[iNeighbor]) * 3 + 1
+            Atomix.@atomic vals[idx] += ϕs
+            Atomix.@atomic vals[idx+1] += ϕs
+            Atomix.@atomic vals[idx+2] += ϕs
+        end
         else
             bcfacei = iFace - numInteriorFaces
             start = bcfacei * 3 - 2
