@@ -18,7 +18,7 @@ end
 
 VectorType{T}(data::A) where {T <: ValueType, A} = VectorType{T, A}(data)
 
-Adapt.@adapt_structure VectorType
+Adapt.adapt_structure(to, v::VectorType{T}) where {T} = VectorType{T}(Adapt.adapt(to, v.data))
 
 @inline ncomp(::VectorType{T}) where {T} = ncomp(T)
 @inline valuetype(::VectorType{T}) where {T} = T

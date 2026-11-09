@@ -76,7 +76,7 @@ function globalassemble_gpu(
     fused_pde = eval(Meta.parse(opstring3))
 
     ddt, spatials = JuNe.splitTempSpat(fused_pde)
-	backend = get_backend(vals)
+	backend = get_backend(vals.data)
 	if !isnothing(ddt)
 		ddt_kernel(backend, 64)(
 			ddt,
@@ -313,7 +313,7 @@ function cellBased_gpu(
     fused_pde = eval(Meta.parse(opstring3))
 
     ddt, spatials = JuNe.splitTempSpat(fused_pde)
-	backend = get_backend(vals)
+	backend = get_backend(vals.data)
 	temporals = !isnothing(ddt) ? ddt : f(args...) = (0.0, 0.0, 0.0, 0.0)
     spatials = !isnothing(spatials) ? spatials : g(args...) = (0.0, 0.0)
 	cellbased_kernel(backend, 64)(
@@ -530,7 +530,7 @@ function assemble_gpu(
     fused_pde = eval(Meta.parse(opstring3))
 
     ddt, spatials = JuNe.splitTempSpat(fused_pde)
-	backend = get_backend(vals)
+	backend = get_backend(vals.data)
 	if !isnothing(ddt)
 		ddt_kernel(backend, 64)(
 			ddt,
@@ -651,7 +651,7 @@ function assemble_batched_gpu(
 	fused_pde = eval(Meta.parse(opstring3))
 
 	ddt, spatials = JuNe.splitTempSpat(fused_pde)
-	backend = get_backend(vals)
+	backend = get_backend(vals.data)
 	if !isnothing(ddt)
 		ddt_kernel(backend, 64)(
 			ddt,
