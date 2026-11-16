@@ -4,6 +4,8 @@ authors = ["Lukas Petermann <lukas.petermann13@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Atomix = "a9b6321e-bd34-4604-b9c9-b65b8de01458"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
@@ -22,3 +24,9 @@ Polyester = "0.7.19"
 PrecompileTools = "1.2.1"
 StaticArrays = "1.9.18"
 ThreadPinning = "1.1.1"
+
+[extras]
+Test = "8dfed614-fee5-5dc3-ada9-63dd8edf6d4a"
+
+[targets]
+test = ["Test"]
