@@ -5,7 +5,12 @@ using StaticArrays
 
 # NeoN hands the matrix values over as a VectorType around the raw device pointer; this makes it a
 # VectorType around a CuArray of n entries times the components of the value type
-wrapGpu(w::VectorType{T}, n) where {T} = VectorType{T}(ptrToGpu(w.data, n * ncomp(T), Float64))
+wrapGpu(w::VectorType{T}, n, FT = Float64) where {T} = VectorType{T}(ptrToGpu(w.data, n * ncomp(T), FT))
+
+# the element type of the array `name` (its variable name in the entry points): FT is a type for all
+# arrays, or a NamedTuple of types per array with an entry `default` for the others
+ftype(FT::Type, ::Symbol) = FT
+ftype(FT::NamedTuple, name::Symbol) = haskey(FT, name) ? FT[name] : FT.default
 
 function ptrToGpu(ptr::Ptr{Cvoid}, size, dType)
 	# inputs of absent operators arrive as empty NeoN vectors, i.e. a null pointer
@@ -43,7 +48,8 @@ function globalassemble_gpu(
 	_oldVectors::Ptr{Cvoid},
 	_dt::Float64,
 	numCells::Int32,
-	numTotalFaces::Int32
+	numTotalFaces::Int32;
+	FT = Float64 # precision of the floating-point arrays behind the pointers: a type, or a NamedTuple name => type with a default
 )
 	boundaryFaces = numTotalFaces - numInteriorFaces
 	owner = ptrToGpu(_owner, numInteriorFaces, Int32)	
@@ -52,23 +58,23 @@ function globalassemble_gpu(
 	ownOffs = ptrToGpu(_ownOffs, numInteriorFaces, UInt8)
 	neiOffs = ptrToGpu(_neiOffs, numInteriorFaces, UInt8)
 	rowOffs = ptrToGpu(_rowOffs, numCells, Int32)
-	vals = wrapGpu(_vals, numCells + 2*numInteriorFaces)
-	faceFlux = ptrToGpu(_faceFlux, numInteriorFaces, Float64)
-	bfaceFlux = ptrToGpu(_bfaceFlux, boundaryFaces, Float64)
-	gamma = ptrToGpu(_gamma, numInteriorFaces, Float64)
-	bgamma = ptrToGpu(_bgamma, boundaryFaces, Float64)
-	deltaCoeffs = ptrToGpu(_deltaCoeffs, numInteriorFaces, Float64)
-	bdeltaCoeffs = ptrToGpu(_bdeltaCoeffs, boundaryFaces, Float64)
-	magFaceArea = ptrToGpu(_magFaceArea, numTotalFaces, Float64)
-	valueFractions = ptrToGpu(_valueFractions, numTotalFaces, Float64)
-	refValue = ptrToGpu(_refValue, boundaryFaces*3, Float64)
-	refGradient = ptrToGpu(_refGradient, boundaryFaces*3, Float64)
-	RHS = ptrToGpu(_RHS, numCells*3, Float64)
+	vals = wrapGpu(_vals, numCells + 2*numInteriorFaces, ftype(FT, :vals))
+	faceFlux = ptrToGpu(_faceFlux, numInteriorFaces, ftype(FT, :faceFlux))
+	bfaceFlux = ptrToGpu(_bfaceFlux, boundaryFaces, ftype(FT, :bfaceFlux))
+	gamma = ptrToGpu(_gamma, numInteriorFaces, ftype(FT, :gamma))
+	bgamma = ptrToGpu(_bgamma, boundaryFaces, ftype(FT, :bgamma))
+	deltaCoeffs = ptrToGpu(_deltaCoeffs, numInteriorFaces, ftype(FT, :deltaCoeffs))
+	bdeltaCoeffs = ptrToGpu(_bdeltaCoeffs, boundaryFaces, ftype(FT, :bdeltaCoeffs))
+	magFaceArea = ptrToGpu(_magFaceArea, numTotalFaces, ftype(FT, :magFaceArea))
+	valueFractions = ptrToGpu(_valueFractions, numTotalFaces, ftype(FT, :valueFractions))
+	refValue = ptrToGpu(_refValue, boundaryFaces*3, ftype(FT, :refValue))
+	refGradient = ptrToGpu(_refGradient, boundaryFaces*3, ftype(FT, :refGradient))
+	RHS = ptrToGpu(_RHS, numCells*3, ftype(FT, :RHS))
 	surfaceCells = ptrToGpu(_surfaceCells, boundaryFaces, Int32)
-	bValues = wrapGpu(_bValues, boundaryFaces)
-	bRhs= ptrToGpu(_bRhs, boundaryFaces*3, Float64)
-	volumes= ptrToGpu(_volumes, numCells, Float64)
-	oldVectors= ptrToGpu(_oldVectors, numCells*3, Float64)
+	bValues = wrapGpu(_bValues, boundaryFaces, ftype(FT, :bValues))
+	bRhs= ptrToGpu(_bRhs, boundaryFaces*3, ftype(FT, :bRhs))
+	volumes= ptrToGpu(_volumes, numCells, ftype(FT, :volumes))
+	oldVectors= ptrToGpu(_oldVectors, numCells*3, ftype(FT, :oldVectors))
 	
 	dt = "$_dt"
     opstring2 = replace(opString, "DELTAT" => dt)
@@ -130,6 +136,7 @@ end
     vals,
     RHS
 )
+	z = zero(eltype(RHS)) # accumulators in the matrix type
 	celli = @index(Global)
 	idx2D = (celli - 1) * 3 + 1
 	valueDiag, rx, ry, rz = temporals(
@@ -137,10 +144,10 @@ end
 		oldVectors[idx2D+1],
 		oldVectors[idx2D+2],
 		volumes[celli],
-		0.0,
-		0.0,
-		0.0,
-		0.0
+		z,
+		z,
+		z,
+		z
 	)
 	idx = (rowOffs[celli] + diagOffs[celli]) * ncomp(vals) + 1
 	pluseq!(vals, idx, valueDiag)
@@ -174,6 +181,7 @@ end
     bRhs,
 	@Const(fused_pde)
 )
+	z = zero(eltype(RHS)) # accumulators in the matrix type
 	iFace = @index(Global)
 
 	if iFace <= numInteriorFaces        
@@ -189,8 +197,8 @@ end
             gamma[iFace], 
             deltaCoeffs[iFace], 
             magFaceArea[iFace], 
-            0.0, 
-            0.0
+            z, 
+            z
         )
 
 		idx = (rowNeiStart + neiOffs[iFace]) * ncomp(vals) + 1
@@ -226,7 +234,7 @@ end
 			bdeltaCoeffs[bcfacei],
 			bgamma[bcfacei],
 			magFaceArea[iFace],
-			0.0, 0.0, 0.0, 0.0
+			z, z, z, z
         )
 
 
@@ -280,32 +288,33 @@ function cellBased_gpu(
     RHS_::Ptr{Cvoid},
     _dt::Float64,
     numInteriorFaces::Int32,
-	numTotalFaces::Int32
+	numTotalFaces::Int32;
+	FT = Float64 # precision of the floating-point arrays behind the pointers: a type, or a NamedTuple name => type with a default
 )
 	numBoundaryFaces = numTotalFaces - numInteriorFaces
 	cellFacesSegments = ptrToGpu(cellFacesSegments_, numCells+1, Int32)
 	diagOffs = ptrToGpu(diagOffs_, numCells, UInt8)
 	rowOffs = ptrToGpu(rowOffs_, numCells, Int32)
 	cellFacesValues = ptrToGpu(cellFacesValues_, (numCells + 2*numInteriorFaces), Int32)
-	faceSignV = ptrToGpu(faceSignV_, (numCells + 2*numInteriorFaces), Float64)
-	vals = wrapGpu(vals_, numCells + 2*numInteriorFaces)
-	faceFlux = ptrToGpu(faceFlux_, numInteriorFaces, Float64)
-	bfaceFlux = ptrToGpu(bfaceFlux_, numBoundaryFaces, Float64)
-	gamma = ptrToGpu(gamma_, numInteriorFaces, Float64)
-	bgamma = ptrToGpu(bgamma_, numBoundaryFaces, Float64)
-	deltaCoeffs = ptrToGpu(deltaCoeffs_, numInteriorFaces, Float64)
-	bdeltaCoeffs = ptrToGpu(bdeltaCoeffs_, numBoundaryFaces, Float64)
+	faceSignV = ptrToGpu(faceSignV_, (numCells + 2*numInteriorFaces), ftype(FT, :faceSignV))
+	vals = wrapGpu(vals_, numCells + 2*numInteriorFaces, ftype(FT, :vals))
+	faceFlux = ptrToGpu(faceFlux_, numInteriorFaces, ftype(FT, :faceFlux))
+	bfaceFlux = ptrToGpu(bfaceFlux_, numBoundaryFaces, ftype(FT, :bfaceFlux))
+	gamma = ptrToGpu(gamma_, numInteriorFaces, ftype(FT, :gamma))
+	bgamma = ptrToGpu(bgamma_, numBoundaryFaces, ftype(FT, :bgamma))
+	deltaCoeffs = ptrToGpu(deltaCoeffs_, numInteriorFaces, ftype(FT, :deltaCoeffs))
+	bdeltaCoeffs = ptrToGpu(bdeltaCoeffs_, numBoundaryFaces, ftype(FT, :bdeltaCoeffs))
 	matrixColumnIdxV = ptrToGpu(matrixColumnIdxV_, (numCells + 2*numInteriorFaces), Int32)
-	magFaceArea = ptrToGpu(magFaceArea_, numTotalFaces, Float64)
-	valueFractions = ptrToGpu(valueFractions_, numTotalFaces, Float64)
+	magFaceArea = ptrToGpu(magFaceArea_, numTotalFaces, ftype(FT, :magFaceArea))
+	valueFractions = ptrToGpu(valueFractions_, numTotalFaces, ftype(FT, :valueFractions))
 	surfaceCells = ptrToGpu(surfaceCells_, numBoundaryFaces, Int32)
-	bValues = wrapGpu(bValues_, numBoundaryFaces)
-	bRhs = ptrToGpu(bRhs_, numBoundaryFaces*3, Float64)
-	volumes = ptrToGpu(volumes_, numCells, Float64)
-	oldVectors = ptrToGpu(oldVectors_, numCells*3, Float64)
-	refValue = ptrToGpu(refValue_, numBoundaryFaces*3, Float64)
-	refGradient = ptrToGpu(refGradient_, numBoundaryFaces*3, Float64)
-	RHS = ptrToGpu(RHS_, numCells*3, Float64)
+	bValues = wrapGpu(bValues_, numBoundaryFaces, ftype(FT, :bValues))
+	bRhs = ptrToGpu(bRhs_, numBoundaryFaces*3, ftype(FT, :bRhs))
+	volumes = ptrToGpu(volumes_, numCells, ftype(FT, :volumes))
+	oldVectors = ptrToGpu(oldVectors_, numCells*3, ftype(FT, :oldVectors))
+	refValue = ptrToGpu(refValue_, numBoundaryFaces*3, ftype(FT, :refValue))
+	refGradient = ptrToGpu(refGradient_, numBoundaryFaces*3, ftype(FT, :refGradient))
+	RHS = ptrToGpu(RHS_, numCells*3, ftype(FT, :RHS))
 
 	dt = "$_dt"
     opstring2 = replace(opString_, "DELTAT" => dt)
@@ -314,8 +323,12 @@ function cellBased_gpu(
 
     ddt, spatials = JuNe.splitTempSpat(fused_pde)
 	backend = get_backend(vals.data)
-	temporals = !isnothing(ddt) ? ddt : f(args...) = (0.0, 0.0, 0.0, 0.0)
-    spatials = !isnothing(spatials) ? spatials : g(args...) = (0.0, 0.0)
+	# the fallbacks for absent operators capture a zero of the precision, not FT itself: a closure
+	# over a type is not isbits and cannot be passed to a kernel
+	zFT = zero(ftype(FT, :vals))
+	hasSpatials = !isnothing(spatials)
+	temporals = !isnothing(ddt) ? ddt : f(args...) = (zFT, zFT, zFT, zFT)
+    spatials = hasSpatials ? spatials : g(args...) = (zFT, zFT)
 	cellbased_kernel(backend, 64)(
 		cellFacesSegments,
 		diagOffs,
@@ -335,7 +348,7 @@ function cellBased_gpu(
 		RHS;
 		ndrange=numCells
 	)
-	face_boundaryKernel(backend, 64)(
+	hasSpatials && face_boundaryKernel(backend, 64)(
 		numInteriorFaces,
 		surfaceCells,
 		diagOffs,
@@ -375,10 +388,11 @@ end
     @Const(oldVectors),
     RHS,
 )
+	z = zero(eltype(RHS)) # accumulators in the matrix type
 	celli = @index(Global)
 	numInternalFaces = cellFacesSegments[celli+1] - cellFacesSegments[celli]
 
-	diagValue = 0.0
+	diagValue = z
 	startIdx = cellFacesSegments[celli]
 	for i in 1:numInternalFaces
 		faceIdx = cellFacesValues[startIdx+i] + 1
@@ -388,7 +402,7 @@ end
 			deltaCoeffs[faceIdx],
 			magFaceArea[faceIdx],
 			diagValue,
-			0.0,
+			z,
 			faceSignV[startIdx+i]
 		)
 		fIdx = matrixColumnIdxV[startIdx+i] * ncomp(vals) + 1
@@ -396,17 +410,17 @@ end
 		# diagValue -= dVal
 	end
 	idx2D = celli * 3 -2
-	dv, rx, ry, rz = 0.0, 0.0, 0.0, 0.0
+	dv, rx, ry, rz = z, z, z, z
 	if length(oldVectors) > 0 # empty without a ddt operator
 		dv, rx, ry, rz = temporals(
 			oldVectors[idx2D],
 			oldVectors[idx2D+1],
 			oldVectors[idx2D+2],
 			volumes[celli],
-			0.0,
-			0.0,
-			0.0,
-			0.0
+			z,
+			z,
+			z,
+			z
 		)
 	end
 	diagValue += dv
@@ -436,6 +450,7 @@ end
     bValues,
     bRhs
 )
+	z = zero(eltype(RHS)) # accumulators in the matrix type
 	bcfacei = @index(Global)
 	iFace = bcfacei + numInteriorFaces
 	start = bcfacei * 3 - 2
@@ -451,7 +466,7 @@ end
 		bdeltaCoeffs[bcfacei],
 		bgamma[bcfacei],
 		magFaceArea[iFace],
-		0.0, 0.0, 0.0, 0.0
+		z, z, z, z
 	)
 	
 	own = surfaceCells[bcfacei] + 1
@@ -498,7 +513,8 @@ function assemble_gpu(
 	_oldVectors::Ptr{Cvoid},
 	_dt::Float64,
 	numCells::Int32,
-	numTotalFaces::Int32
+	numTotalFaces::Int32;
+	FT = Float64 # precision of the floating-point arrays behind the pointers: a type, or a NamedTuple name => type with a default
 )
 	boundaryFaces = numTotalFaces - numInteriorFaces
 	owner = ptrToGpu(_owner, numInteriorFaces, Int32)	
@@ -507,23 +523,23 @@ function assemble_gpu(
 	ownOffs = ptrToGpu(_ownOffs, numInteriorFaces, UInt8)
 	neiOffs = ptrToGpu(_neiOffs, numInteriorFaces, UInt8)
 	rowOffs = ptrToGpu(_rowOffs, numCells, Int32)
-	vals = wrapGpu(_vals, numCells + 2*numInteriorFaces)
-	faceFlux = ptrToGpu(_faceFlux, numInteriorFaces, Float64)
-	bfaceFlux = ptrToGpu(_bfaceFlux, boundaryFaces, Float64)
-	gamma = ptrToGpu(_gamma, numInteriorFaces, Float64)
-	bgamma = ptrToGpu(_bgamma, boundaryFaces, Float64)
-	deltaCoeffs = ptrToGpu(_deltaCoeffs, numInteriorFaces, Float64)
-	bdeltaCoeffs = ptrToGpu(_bdeltaCoeffs, boundaryFaces, Float64)
-	magFaceArea = ptrToGpu(_magFaceArea, numTotalFaces, Float64)
-	valueFractions = ptrToGpu(_valueFractions, numTotalFaces, Float64)
-	refValue = ptrToGpu(_refValue, boundaryFaces*3, Float64)
-	refGradient = ptrToGpu(_refGradient, boundaryFaces*3, Float64)
-	RHS = ptrToGpu(_RHS, numCells*3, Float64)
+	vals = wrapGpu(_vals, numCells + 2*numInteriorFaces, ftype(FT, :vals))
+	faceFlux = ptrToGpu(_faceFlux, numInteriorFaces, ftype(FT, :faceFlux))
+	bfaceFlux = ptrToGpu(_bfaceFlux, boundaryFaces, ftype(FT, :bfaceFlux))
+	gamma = ptrToGpu(_gamma, numInteriorFaces, ftype(FT, :gamma))
+	bgamma = ptrToGpu(_bgamma, boundaryFaces, ftype(FT, :bgamma))
+	deltaCoeffs = ptrToGpu(_deltaCoeffs, numInteriorFaces, ftype(FT, :deltaCoeffs))
+	bdeltaCoeffs = ptrToGpu(_bdeltaCoeffs, boundaryFaces, ftype(FT, :bdeltaCoeffs))
+	magFaceArea = ptrToGpu(_magFaceArea, numTotalFaces, ftype(FT, :magFaceArea))
+	valueFractions = ptrToGpu(_valueFractions, numTotalFaces, ftype(FT, :valueFractions))
+	refValue = ptrToGpu(_refValue, boundaryFaces*3, ftype(FT, :refValue))
+	refGradient = ptrToGpu(_refGradient, boundaryFaces*3, ftype(FT, :refGradient))
+	RHS = ptrToGpu(_RHS, numCells*3, ftype(FT, :RHS))
 	surfaceCells = ptrToGpu(_surfaceCells, boundaryFaces, Int32)
-	bValues = wrapGpu(_bValues, boundaryFaces)
-	bRhs= ptrToGpu(_bRhs, boundaryFaces*3, Float64)
-	volumes= ptrToGpu(_volumes, numCells, Float64)
-	oldVectors= ptrToGpu(_oldVectors, numCells*3, Float64)
+	bValues = wrapGpu(_bValues, boundaryFaces, ftype(FT, :bValues))
+	bRhs= ptrToGpu(_bRhs, boundaryFaces*3, ftype(FT, :bRhs))
+	volumes= ptrToGpu(_volumes, numCells, ftype(FT, :volumes))
+	oldVectors= ptrToGpu(_oldVectors, numCells*3, ftype(FT, :oldVectors))
 	dt = "$_dt"
     opstring2 = replace(opString, "DELTAT" => dt)
     opstring3 = replace(opstring2, "BDF2" => "BDF1")
@@ -616,7 +632,8 @@ function assemble_batched_gpu(
 	_batchSegments::Ptr{Cvoid},
 	_batchFaces::Ptr{Cvoid},
 	numCells::Int32,
-	numTotalFaces::Int32
+	numTotalFaces::Int32;
+	FT = Float64 # precision of the floating-point arrays behind the pointers: a type, or a NamedTuple name => type with a default
 )
 	boundaryFaces = numTotalFaces - numInteriorFaces
 	owner = ptrToGpu(_owner, numInteriorFaces, Int32)
@@ -625,23 +642,23 @@ function assemble_batched_gpu(
 	ownOffs = ptrToGpu(_ownOffs, numInteriorFaces, UInt8)
 	neiOffs = ptrToGpu(_neiOffs, numInteriorFaces, UInt8)
 	rowOffs = ptrToGpu(_rowOffs, numCells, Int32)
-	vals = wrapGpu(_vals, numCells + 2*numInteriorFaces)
-	faceFlux = ptrToGpu(_faceFlux, numInteriorFaces, Float64)
-	bfaceFlux = ptrToGpu(_bfaceFlux, boundaryFaces, Float64)
-	gamma = ptrToGpu(_gamma, numInteriorFaces, Float64)
-	bgamma = ptrToGpu(_bgamma, boundaryFaces, Float64)
-	deltaCoeffs = ptrToGpu(_deltaCoeffs, numInteriorFaces, Float64)
-	bdeltaCoeffs = ptrToGpu(_bdeltaCoeffs, boundaryFaces, Float64)
-	magFaceArea = ptrToGpu(_magFaceArea, numTotalFaces, Float64)
-	valueFractions = ptrToGpu(_valueFractions, numTotalFaces, Float64)
-	refValue = ptrToGpu(_refValue, boundaryFaces*3, Float64)
-	refGradient = ptrToGpu(_refGradient, boundaryFaces*3, Float64)
-	RHS = ptrToGpu(_RHS, numCells*3, Float64)
+	vals = wrapGpu(_vals, numCells + 2*numInteriorFaces, ftype(FT, :vals))
+	faceFlux = ptrToGpu(_faceFlux, numInteriorFaces, ftype(FT, :faceFlux))
+	bfaceFlux = ptrToGpu(_bfaceFlux, boundaryFaces, ftype(FT, :bfaceFlux))
+	gamma = ptrToGpu(_gamma, numInteriorFaces, ftype(FT, :gamma))
+	bgamma = ptrToGpu(_bgamma, boundaryFaces, ftype(FT, :bgamma))
+	deltaCoeffs = ptrToGpu(_deltaCoeffs, numInteriorFaces, ftype(FT, :deltaCoeffs))
+	bdeltaCoeffs = ptrToGpu(_bdeltaCoeffs, boundaryFaces, ftype(FT, :bdeltaCoeffs))
+	magFaceArea = ptrToGpu(_magFaceArea, numTotalFaces, ftype(FT, :magFaceArea))
+	valueFractions = ptrToGpu(_valueFractions, numTotalFaces, ftype(FT, :valueFractions))
+	refValue = ptrToGpu(_refValue, boundaryFaces*3, ftype(FT, :refValue))
+	refGradient = ptrToGpu(_refGradient, boundaryFaces*3, ftype(FT, :refGradient))
+	RHS = ptrToGpu(_RHS, numCells*3, ftype(FT, :RHS))
 	surfaceCells = ptrToGpu(_surfaceCells, boundaryFaces, Int32)
-	bValues = wrapGpu(_bValues, boundaryFaces)
-	bRhs = ptrToGpu(_bRhs, boundaryFaces*3, Float64)
-	volumes = ptrToGpu(_volumes, numCells, Float64)
-	oldVectors = ptrToGpu(_oldVectors, numCells*3, Float64)
+	bValues = wrapGpu(_bValues, boundaryFaces, ftype(FT, :bValues))
+	bRhs = ptrToGpu(_bRhs, boundaryFaces*3, ftype(FT, :bRhs))
+	volumes = ptrToGpu(_volumes, numCells, ftype(FT, :volumes))
+	oldVectors = ptrToGpu(_oldVectors, numCells*3, ftype(FT, :oldVectors))
 	# the batch segments are needed on the host for the launch sizes; they are tiny
 	batchSegments = Array(ptrToGpu(_batchSegments, nBatches + 1, Int32))
 	batchFaces = ptrToGpu(_batchFaces, batchSegments[end], Int32)
@@ -728,6 +745,7 @@ end
 	@Const(magFaceArea),
 	@Const(fused_pde)
 )
+	z = zero(eltype(vals.data)) # accumulators in the matrix type
 	i = @index(Global)
 	iFace = batchFaces[offset + i] + 1
 	iOwner = owner[iFace] + 1
@@ -740,8 +758,8 @@ end
 		gamma[iFace],
 		deltaCoeffs[iFace],
 		magFaceArea[iFace],
-		0.0,
-		0.0
+		z,
+		z
 	)
 
 	idx = (rowNeiStart + neiOffs[iFace]) * ncomp(vals) + 1
@@ -776,6 +794,7 @@ end
     @Const(magFaceArea),
 	@Const(fused_pde)
 )
+	z = zero(eltype(vals.data)) # accumulators in the matrix type
 	iFace = @index(Global)
 	iOwner = owner[iFace] + 1
 	iNeighbor = neighbour[iFace] + 1
@@ -789,8 +808,8 @@ end
 		gamma[iFace], 
 		deltaCoeffs[iFace], 
 		magFaceArea[iFace], 
-		0.0, 
-		0.0
+		z, 
+		z
 	)
 
 	idx = (rowNeiStart + neiOffs[iFace]) * ncomp(vals) + 1
