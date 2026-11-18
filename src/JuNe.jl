@@ -9,6 +9,7 @@ include("types.jl") # before the kernels, which take the VectorType
 include("operators.jl")
 include("gpu.jl")
 include("cuda_batched.jl")
+include("precision.jl") # fp64/fp32/fp16/bf16 study of the GPU assembly
 
 function ddtloop(
     temporals::Union{DiffEq,Ddt},
