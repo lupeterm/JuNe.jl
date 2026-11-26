@@ -3,6 +3,7 @@ module JuNe
 using PrecompileTools
 using Adapt
 using Atomix
+using UnsafeAtomics
 using Polyester
 
 include("types.jl") # before the kernels, which take the VectorType
@@ -989,9 +990,9 @@ function faceBasedAll_threaded(
         pluseq_atomic!(vals, vIdx, valueDiag)
         pluseq!(bValues, (bcfacei-1)*ncomp(bValues)+1, valueDiag)
         # FIXME dont forget, changed this back to [vec3, vec3] instead of [xxxyyyzzz] for now
-        Atomix.@atomic RHS[own*3-2] += valueRHSx
-        Atomix.@atomic RHS[own*3-1] += valueRHSy
-        Atomix.@atomic RHS[own*3] += valueRHSz
+        Atomix.@atomic :monotonic RHS[own*3-2] += valueRHSx
+        Atomix.@atomic :monotonic RHS[own*3-1] += valueRHSy
+        Atomix.@atomic :monotonic RHS[own*3] += valueRHSz
 
         bRhs[bcfacei*3-2:bcfacei*3] += [valueRHSx, valueRHSy, valueRHSz]
     end
@@ -1164,9 +1165,9 @@ function globalfaceBased_threaded(
             pluseq_atomic!(vals, vIdx, valueDiag)
             pluseq!(bValues, (bcfacei-1)*ncomp(bValues)+1, valueDiag)
             # FIXME dont forget, changed this back to [vec3, vec3] instead of [xxxyyyzzz] for now
-            Atomix.@atomic RHS[own*3-2] += valueRHSx
-            Atomix.@atomic RHS[own*3-1] += valueRHSy
-            Atomix.@atomic RHS[own*3] += valueRHSz
+            Atomix.@atomic :monotonic RHS[own*3-2] += valueRHSx
+            Atomix.@atomic :monotonic RHS[own*3-1] += valueRHSy
+            Atomix.@atomic :monotonic RHS[own*3] += valueRHSz
 
             bRhs[bcfacei*3-2:bcfacei*3] += [valueRHSx, valueRHSy, valueRHSz]
         end
@@ -1342,9 +1343,9 @@ function faceBasedBoundary_threaded(
         pluseq_atomic!(vals, vIdx, valueDiag)
         pluseq!(bValues, (bcfacei-1)*ncomp(bValues)+1, valueDiag)
         # FIXME dont forget, changed this back to [vec3, vec3] instead of [xxxyyyzzz] for now
-        Atomix.@atomic RHS[own*3-2] += valueRHSx
-        Atomix.@atomic RHS[own*3-1] += valueRHSy
-        Atomix.@atomic RHS[own*3] += valueRHSz
+        Atomix.@atomic :monotonic RHS[own*3-2] += valueRHSx
+        Atomix.@atomic :monotonic RHS[own*3-1] += valueRHSy
+        Atomix.@atomic :monotonic RHS[own*3] += valueRHSz
 
         bRhs[bcfacei*3-2:bcfacei*3] += [valueRHSx, valueRHSy, valueRHSz]
     end

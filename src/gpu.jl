@@ -248,9 +248,9 @@ end
         pluseq!(bValues, (bcfacei-1)*ncomp(bValues)+1, fluxContrib)
 		pluseq_atomic!(vals, vIdx, fluxContrib)
         # # FIXME dont forget, changed this back to [xyzxyzxyz] instead of [xxxyyyzzz] for now
-        Atomix.@atomic RHS[own*3-2] += valueRHSx
-        Atomix.@atomic RHS[own*3-1] += valueRHSy
-        Atomix.@atomic RHS[own*3] += valueRHSz
+        relaxed_add!(RHS, own*3-2, valueRHSx)
+        relaxed_add!(RHS, own*3-1, valueRHSy)
+        relaxed_add!(RHS, own*3, valueRHSz)
         
 		bRhs[bcfacei*3-2] += valueRHSx
         bRhs[bcfacei*3-1] += valueRHSy
@@ -479,9 +479,9 @@ end
 	pluseq!(bValues, (bcfacei-1)*ncomp(bValues)+1, valueDiag)
 	pluseq_atomic!(vals, vIdx, valueDiag)
 	# # FIXME dont forget, changed this back to [xyzxyzxyz] instead of [xxxyyyzzz] for now
-	Atomix.@atomic RHS[own*3-2] += valueRHSx
-	Atomix.@atomic RHS[own*3-1] += valueRHSy
-	Atomix.@atomic RHS[own*3] += valueRHSz
+	relaxed_add!(RHS, own*3-2, valueRHSx)
+	relaxed_add!(RHS, own*3-1, valueRHSy)
+	relaxed_add!(RHS, own*3, valueRHSz)
 
 	bRhs[bcfacei*3-2] += valueRHSx
 	bRhs[bcfacei*3-1] += valueRHSy

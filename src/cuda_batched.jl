@@ -72,9 +72,9 @@ function cuda_face_boundaryKernel!(
 	vIdx = (rowOffs[own] + diagOffs[own]) * ncomp(vals) + 1
 	pluseq!(bValues, (bcfacei-1)*ncomp(bValues)+1, valueDiag)
 	pluseq_atomic!(vals, vIdx, valueDiag)
-	CUDA.@atomic RHS[own*3-2] += valueRHSx
-	CUDA.@atomic RHS[own*3-1] += valueRHSy
-	CUDA.@atomic RHS[own*3]   += valueRHSz
+	relaxed_add!(RHS, own*3-2, valueRHSx)
+	relaxed_add!(RHS, own*3-1, valueRHSy)
+	relaxed_add!(RHS, own*3, valueRHSz)
 	bRhs[bcfacei*3-2] += valueRHSx
 	bRhs[bcfacei*3-1] += valueRHSy
 	bRhs[bcfacei*3]   += valueRHSz
