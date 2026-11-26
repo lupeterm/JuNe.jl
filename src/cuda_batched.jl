@@ -32,7 +32,7 @@ function cuda_batched_innerFace_kernel!(
 	rowNeiStart = rowOffs[iNeighbor]
 	rowOwnStart = rowOffs[iOwner]
 	valueUpper, valueLower = fused_pde(
-		faceFlux[iFace], gamma[iFace], deltaCoeffs[iFace], magFaceArea[iFace], z, z
+		readOrZero(faceFlux, iFace), readOrZero(gamma, iFace), deltaCoeffs[iFace], magFaceArea[iFace], z, z
 	)
 	idx = (rowNeiStart + neiOffs[iFace]) * ncomp(vals) + 1
 	eq!(vals, idx, valueUpper)
@@ -65,7 +65,7 @@ function cuda_face_boundaryKernel!(
 	valueDiag, valueRHSx, valueRHSy, valueRHSz = spatialOperators(
 		refValue[start], refValue[start+1], refValue[start+2],
 		refGradient[start], refGradient[start+1], refGradient[start+2],
-		bfaceFlux[bcfacei], valueFractions[bcfacei], bdeltaCoeffs[bcfacei], bgamma[bcfacei],
+		readOrZero(bfaceFlux, bcfacei), valueFractions[bcfacei], bdeltaCoeffs[bcfacei], readOrZero(bgamma, bcfacei),
 		magFaceArea[iFace], z, z, z, z
 	)
 	own = surfaceCells[bcfacei] + 1

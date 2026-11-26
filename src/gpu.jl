@@ -7,6 +7,11 @@ using StaticArrays
 # VectorType around a CuArray of n entries times the components of the value type
 wrapGpu(w::VectorType{T}, n, FT = Float64) where {T} = VectorType{T}(ptrToGpu(w.data, n * ncomp(T), FT))
 
+# the inputs of an operator that is not in the expression arrive as empty arrays (a null pointer from
+# NeoN): the kernels read them through readOrZero, which gives zero without touching memory; the
+# branch is the same for all threads of a launch
+@inline readOrZero(a, i) = isempty(a) ? zero(eltype(a)) : a[i]
+
 # the element type of the array `name` (its variable name in the entry points): FT is a type for all
 # arrays, or a NamedTuple of types per array with an entry `default` for the others
 ftype(FT::Type, ::Symbol) = FT
@@ -193,8 +198,8 @@ end
 		rowOwnStart = rowOffs[iOwner]
 
         valueUpper, valueLower = fused_pde(
-            faceFlux[iFace], 
-            gamma[iFace], 
+            readOrZero(faceFlux, iFace), 
+            readOrZero(gamma, iFace), 
             deltaCoeffs[iFace], 
             magFaceArea[iFace], 
             z, 
@@ -229,10 +234,10 @@ end
 			refGradient[start],
 			refGradient[start+1],
 			refGradient[start+2],
-			bfaceFlux[bcfacei],
+			readOrZero(bfaceFlux, bcfacei),
 			valueFractions[bcfacei],
 			bdeltaCoeffs[bcfacei],
-			bgamma[bcfacei],
+			readOrZero(bgamma, bcfacei),
 			magFaceArea[iFace],
 			z, z, z, z
         )
@@ -397,8 +402,8 @@ end
 	for i in 1:numInternalFaces
 		faceIdx = cellFacesValues[startIdx+i] + 1
 		diagValue, offDiagValue = spatials(
-			faceFlux[faceIdx],
-			gamma[faceIdx],
+			readOrZero(faceFlux, faceIdx),
+			readOrZero(gamma, faceIdx),
 			deltaCoeffs[faceIdx],
 			magFaceArea[faceIdx],
 			diagValue,
@@ -461,10 +466,10 @@ end
 		refGradient[start],
 		refGradient[start+1],
 		refGradient[start+2],
-		bfaceFlux[bcfacei],
+		readOrZero(bfaceFlux, bcfacei),
 		valueFractions[bcfacei],
 		bdeltaCoeffs[bcfacei],
-		bgamma[bcfacei],
+		readOrZero(bgamma, bcfacei),
 		magFaceArea[iFace],
 		z, z, z, z
 	)
@@ -754,8 +759,8 @@ end
 	rowOwnStart = rowOffs[iOwner]
 
 	valueUpper, valueLower = fused_pde(
-		faceFlux[iFace],
-		gamma[iFace],
+		readOrZero(faceFlux, iFace),
+		readOrZero(gamma, iFace),
 		deltaCoeffs[iFace],
 		magFaceArea[iFace],
 		z,
@@ -804,8 +809,8 @@ end
 	rowOwnStart = rowOffs[iOwner]
 
 	valueUpper, valueLower = fused_pde(
-		faceFlux[iFace], 
-		gamma[iFace], 
+		readOrZero(faceFlux, iFace), 
+		readOrZero(gamma, iFace), 
 		deltaCoeffs[iFace], 
 		magFaceArea[iFace], 
 		z, 
@@ -819,7 +824,6 @@ end
 	idx = (rowOwnStart + ownOffs[iFace]) * ncomp(vals) + 1
 	pluseq!(vals, idx, valueLower)
 	idx = (rowNeiStart + diagOffs[iNeighbor]) * ncomp(vals) + 1
-	# FIXME when going back to scalar values
 
 	minuseq_atomic!(vals, idx, valueLower)
 	bs = boundedScale(fused_pde)
