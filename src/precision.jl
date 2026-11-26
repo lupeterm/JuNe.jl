@@ -17,14 +17,16 @@
 #   Allocation time       the device arrays of the reduced-precision inputs and outputs
 #   Conversion time       Float64 -> P of the reduced inputs, on the device
 #   Back-conversion time  matrix and rhs -> Float64, if the matrix is not in fp64
+#   Reset time            the reset of matrix and rhs alone (part of the assembly time)
 # and the deviation of matrix and rhs from the fp64 result of the same expression. fp64 "whole" runs
 # on NeoN's own arrays, so NeoN's system holds the fp64 result afterwards.
 
 using Printf
+import NVTX
 
 # BFloat16 is Core.BFloat16 (Julia >= 1.11); its arithmetic comes with CUDA.jl through BFloat16s
 const PRECISIONS = (Float64, Float32, Float16, Core.BFloat16)
-const REDUCED = (Float32, Core.BFloat16)  # one operator at a time
+const REDUCED = (Float32, Float16, Core.BFloat16)  # one operator at a time
 const OPERATORS = (:ddt, :div, :lap)
 precision_name(T) = T === Float64 ? "fp64" : T === Float32 ? "fp32" : T === Float16 ? "fp16" : "bf16"
 
@@ -231,7 +233,11 @@ function benchmark_precision(entry::Symbol, args...; runs = parse(Int, get(ENV, 
     layout = precision_layout(entry, args)
     present = unique(operator_of.(split(args[9], " + ")))
     references = Dict{Any,Any}()
-    for c in precision_configs(present)
+    # PRECISION_CONFIGS=fp64,fp32 runs only these configurations (e.g. for a profiler)
+    only = split(get(ENV, "PRECISION_CONFIGS", ""), ',', keepempty = false)
+    configs = precision_configs(present)
+    for c in configs
+        isempty(only) || c.label in only || continue
         newargs, keep, types = config_args(args, layout, c, runs)
         # newargs only holds raw pointers into the copies: keep them from being collected
         vals, rhs = GC.@preserve keep begin
@@ -245,6 +251,21 @@ function benchmark_precision(entry::Symbol, args...; runs = parse(Int, get(ENV, 
                 println("Assembly time (JuNe $(layout.name) $(c.label) $run) = $us [us]")
                 flush(stdout)  # NeoN aborts the process on a Julia error
             end
+            # the reset alone (part of every assembly time), to split the assembly into its parts
+            for run in 0:runs-1
+                CUDA.synchronize()
+                t0 = time_ns()
+                reset!(newargs, layout, c.mat)
+                CUDA.synchronize()
+                println("Reset time (JuNe $(layout.name) $(c.label) $run) = $((time_ns() - t0) ÷ 1000) [us]")
+            end
+            # one more assembly (the reset cleared the result the deviation is taken from), in an NVTX
+            # range "precision <strategy> <configuration>" that a profiler can select
+            NVTX.range_push(; message = "precision $(layout.name) $(c.label)")
+            reset!(newargs, layout, c.mat)
+            f(newargs...; FT = types)
+            CUDA.synchronize()
+            NVTX.range_pop()
             time_back_conversion(newargs, layout, c, runs)
             precision_result(newargs, layout, c.mat)
         end
