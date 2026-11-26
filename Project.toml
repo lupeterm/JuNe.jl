@@ -1,7 +1,7 @@
 name = "JuNe"
 uuid = "64a5002a-5e2d-4182-be9a-6fa6f45952bb"
 authors = ["Lukas Petermann <lukas.petermann13@gmail.com>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
