@@ -10,6 +10,7 @@ include("types.jl") # before the kernels, which take the VectorType
 include("operators.jl")
 include("gpu.jl")
 include("cuda_batched.jl")
+include("fp8.jl") # Float8E4M3 storage type for the precision study
 include("precision.jl") # fp64/fp32/fp16/bf16 study of the GPU assembly
 
 function ddtloop(

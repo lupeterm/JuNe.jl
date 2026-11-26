@@ -28,7 +28,11 @@ import NVTX
 const PRECISIONS = (Float64, Float32, Float16, Core.BFloat16)
 const REDUCED = (Float32, Float16, Core.BFloat16)  # one operator at a time
 const OPERATORS = (:ddt, :div, :lap)
-precision_name(T) = T === Float64 ? "fp64" : T === Float32 ? "fp32" : T === Float16 ? "fp16" : "bf16"
+precision_name(T) = T === Float64 ? "fp64" : T === Float32 ? "fp32" : T === Float16 ? "fp16" :
+                    T === Float8E4M3 ? "fp8" : "bf16"
+# only on request (PRECISION_CONFIGS=...,fp8): the whole assembly with inputs, matrix and rhs stored in
+# fp8 (E4M3) and the operators computing in fp16 (no fp8 arithmetic outside the tensor cores)
+const FP8_WHOLE = (label = "fp8", mode = :whole, op = nothing, T = Float8E4M3, mat = Float8E4M3, P = Float16)
 
 # which operator reads an input; :shared inputs are the boundary data of div and laplacian
 const OWNER = Dict(:volumes => :ddt, :oldVectors => :ddt,
@@ -113,7 +117,7 @@ function config_opstring(opstring, c)
     for term in split(opstring, " + ")
         op = operator_of(term)
         c.mode === :alone && op !== c.op && continue
-        T = c.mode === :reduce && op !== c.op ? Float64 : c.T
+        T = c.mode === :reduce && op !== c.op ? Float64 : get(c, :P, c.T)  # P: compute type, if not c.T
         push!(terms, replace(term, "Float64" => string(T)))  # e.g. Float32, Core.BFloat16
     end
     return join(terms, " + ")
@@ -236,6 +240,7 @@ function benchmark_precision(entry::Symbol, args...; runs = parse(Int, get(ENV, 
     # PRECISION_CONFIGS=fp64,fp32 runs only these configurations (e.g. for a profiler)
     only = split(get(ENV, "PRECISION_CONFIGS", ""), ',', keepempty = false)
     configs = precision_configs(present)
+    "fp8" in only && push!(configs, FP8_WHOLE)
     for c in configs
         isempty(only) || c.label in only || continue
         newargs, keep, types = config_args(args, layout, c, runs)
