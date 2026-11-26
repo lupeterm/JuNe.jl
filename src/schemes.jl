@@ -81,3 +81,7 @@ end
 function BDF1(d::Nothing)::BDF1{Float64}
     return BDF1{Float64}(1.0)
 end
+
+# operator strings build the scheme from the Float64 time step: Ddt{P,BDF1{P}} converts it to P
+Base.convert(::Type{BDF1{P}}, s::BDF1) where {P<:AbstractFloat} = BDF1{P}(P(s.a0a1))
+Base.convert(::Type{BDF2{P}}, s::BDF2) where {P<:AbstractFloat} = BDF2{P}(P(s.a0), P(s.a1), P(s.a2))
